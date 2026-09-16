@@ -829,7 +829,7 @@ impl Segmenter {
                     bytes: suffix,
                 });
             }
-            if let Some(unit) = make_unit(&self.path, &builder, language_kind(mode), Vec::new()) {
+            if let Some(unit) = make_unit(&self.path, &builder, self.mode, Vec::new()) {
                 self.ready.push_back(unit);
             }
         }
@@ -946,7 +946,10 @@ impl Segmenter {
         }
 
         if self.builder.is_none() {
-            if character.is_whitespace() {
+            if character == '\n'
+                || (self.mode == ResolvedMode::Language(UnitMode::Prose)
+                    && character.is_whitespace())
+            {
                 return;
             }
             self.builder = Some(UnitBuffer {
@@ -974,13 +977,7 @@ impl Segmenter {
             .iter()
             .map(|(_, heading)| heading.clone())
             .collect();
-        let kind = match self.mode {
-            ResolvedMode::Section => "Markdown section",
-            ResolvedMode::Paragraph => "paragraph",
-            ResolvedMode::Window => "text window",
-            ResolvedMode::Language(mode) => language_kind(mode),
-        };
-        let unit = make_unit(&self.path, &builder, kind, headings);
+        let unit = make_unit(&self.path, &builder, self.mode, headings);
 
         if let Some(start) =
             overlap_start.filter(|start| *start > 0 && *start < builder.bytes.len())
@@ -1160,20 +1157,36 @@ fn normalized_heading(value: &str, final_value: bool) -> &str {
     value
 }
 
-fn make_unit(path: &Path, builder: &UnitBuffer, kind: &str, headings: Vec<String>) -> Option<Unit> {
+fn make_unit(
+    path: &Path,
+    builder: &UnitBuffer,
+    mode: ResolvedMode,
+    headings: Vec<String>,
+) -> Option<Unit> {
     let text = std::str::from_utf8(&builder.bytes).expect("unit bytes are valid UTF-8");
-    let trimmed_start = text.trim_start_matches(char::is_whitespace);
-    let leading = text.len() - trimmed_start.len();
-    let target = trimmed_start.trim_end_matches(char::is_whitespace);
-    if target.is_empty() {
-        return None;
-    }
+    let first_content = text.find(|character: char| !character.is_whitespace())?;
+    // Drop leading blank lines, but retain the first source line's indentation.
+    // Prose units may begin mid-line and keep their sentence whitespace trimming.
+    let leading = if mode == ResolvedMode::Language(UnitMode::Prose) {
+        first_content
+    } else {
+        text[..first_content]
+            .rfind('\n')
+            .map_or(0, |index| index + 1)
+    };
+    let target = text[leading..].trim_end_matches(char::is_whitespace);
     let start_line = builder.start_line
         + builder.bytes[..leading]
             .iter()
             .filter(|byte| **byte == b'\n')
             .count();
     let end_line = start_line + target.bytes().filter(|byte| *byte == b'\n').count();
+    let kind = match mode {
+        ResolvedMode::Section => "Markdown section",
+        ResolvedMode::Paragraph => "paragraph",
+        ResolvedMode::Window => "text window",
+        ResolvedMode::Language(mode) => language_kind(mode),
+    };
     Some(Unit {
         path: path.to_owned(),
         start_byte: builder.start_byte + leading,
@@ -1275,6 +1288,46 @@ mod tests {
         assert_eq!(units.len(), 2);
         assert_eq!(units[0].target, "first paragraph\ncontinued");
         assert_eq!(units[1].target, "second paragraph");
+    }
+
+    #[test_case::test_case(UnitMode::Rust; "rust")]
+    #[test_case::test_case(UnitMode::Javascript; "javascript")]
+    #[test_case::test_case(UnitMode::Css; "css")]
+    #[test_case::test_case(UnitMode::Window; "window")]
+    #[test_case::test_case(UnitMode::Paragraph; "paragraph")]
+    #[test_case::test_case(UnitMode::Section; "section")]
+    fn source_units_preserve_first_line_indentation(mode: UnitMode) {
+        for (indent, newline) in [("    ", "\n"), ("\t", "\r\n")] {
+            let source = format!(
+                " {newline}{indent}let output = match input {{{newline}\
+                 {indent}{indent}Some(value) => value,{newline}\
+                 {indent}}};{newline}{indent}next();{newline}"
+            );
+            let mut scan_config = config(mode, 1_000);
+            scan_config.window_lines = 80;
+            let (actual, issue, finished) = units(source.as_bytes(), "code", scan_config);
+            assert!(finished);
+            assert_eq!(issue, None);
+            assert!(!actual.is_empty());
+            assert_eq!(actual[0].start_line, 2);
+            assert!(actual[0].target.starts_with(&format!("{indent}let output")));
+            for unit in actual {
+                assert!(unit.target.starts_with(indent), "{:?}", unit.target);
+                assert_eq!(&source[unit.start_byte..unit.end_byte], unit.target);
+                assert_eq!(
+                    unit.start_line,
+                    source[..unit.start_byte]
+                        .bytes()
+                        .filter(|b| *b == b'\n')
+                        .count()
+                        + 1
+                );
+                assert_eq!(
+                    unit.end_line,
+                    unit.start_line + unit.target.bytes().filter(|b| *b == b'\n').count()
+                );
+            }
+        }
     }
 
     #[test]
