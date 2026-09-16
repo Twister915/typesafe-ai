@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Validate that System One requests contain at least one question, accept omitted question
+  instructions when decoding, and add offline contract fixtures.
 - Add a manual GitHub release workflow that opens a release PR, auto-merges
   after CI passes, and tags the merged commit while preserving branch protection;
   crates.io publishing remains a local maintainer step.

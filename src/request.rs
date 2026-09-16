@@ -70,6 +70,13 @@ impl Request {
             });
         }
 
+        if self.questions.is_empty() {
+            return Err(Error::Validation {
+                field: "questions".to_owned(),
+                message: "must contain at least one question".to_owned(),
+            });
+        }
+
         for (id, question) in &self.questions {
             question.validate(id)?;
         }
@@ -114,7 +121,8 @@ impl NoulCriteria {
 pub enum Question {
     /// A yes/no judgment returned as the probability of yes.
     Noul {
-        /// The judgment the model should make.
+        /// The judgment the model should make. Missing wire values deserialize as JSON null.
+        #[serde(default)]
         instructions: Value,
         /// Optional descriptions of the positive and negative answers.
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -122,14 +130,16 @@ pub enum Question {
     },
     /// Selection of one label from a caller-defined set.
     Choice {
-        /// The decision the model should make.
+        /// The decision the model should make. Missing wire values deserialize as JSON null.
+        #[serde(default)]
         instructions: Value,
         /// Options keyed by their labels.
         criteria: BTreeMap<String, Value>,
     },
     /// A rating along an ordered caller-defined rubric.
     Score {
-        /// The rating the model should make.
+        /// The rating the model should make. Missing wire values deserialize as JSON null.
+        #[serde(default)]
         instructions: Value,
         /// Ordered descriptions of the score levels.
         criteria: Vec<Value>,

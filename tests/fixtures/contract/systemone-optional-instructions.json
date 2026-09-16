@@ -1,0 +1,23 @@
+{
+  "state": "The request contains no question text.",
+  "model": "jev-latest",
+  "questions": {
+    "noul": {
+      "type": "noul"
+    },
+    "department": {
+      "type": "choice",
+      "criteria": {
+        "billing": null,
+        "technical": "Bugs, outages, integrations"
+      }
+    },
+    "frustration": {
+      "type": "score",
+      "criteria": [
+        "Calm",
+        "Frustrated"
+      ]
+    }
+  }
+}
