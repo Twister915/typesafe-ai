@@ -1,0 +1,125 @@
+[package]
+name = "typesafe-ai"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Sync and async Rust clients for the TypeSafe System One API"
+repository = "https://github.com/Twister915/typesafe-ai"
+keywords = ["ai", "classification", "sdk", "typesafe"]
+categories = ["api-bindings", "web-programming::http-client"]
+include = [
+    "/.rustfmt.toml",
+    "/.ts_rules/**",
+    "/AGENTS.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/Cargo.toml",
+    "/LICENSE",
+    "/README.md",
+    "/docs/**",
+    "/examples/**",
+    "/rust-toolchain.toml",
+    "/src/**",
+    "/tests/**",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[lib]
+name = "typesafe_ai"
+path = "src/lib.rs"
+
+[[example]]
+name = "async_evaluate"
+required-features = ["reqwest"]
+
+[[example]]
+name = "blocking_evaluate"
+required-features = ["ureq"]
+
+[[example]]
+name = "async_events"
+required-features = ["reqwest"]
+
+[[example]]
+name = "blocking_events"
+required-features = ["ureq"]
+
+[[example]]
+name = "pr_questions"
+required-features = ["ureq"]
+test = true
+
+[features]
+default = ["reqwest", "rustls-tls"]
+reqwest = ["dep:futures-util", "dep:httpdate", "dep:reqwest", "dep:tokio", "dep:url"]
+rustls-tls = ["reqwest?/rustls", "ureq?/rustls"]
+ureq = ["dep:httpdate", "dep:ureq", "dep:url"]
+
+[dependencies]
+http = "1"
+serde_json = "1"
+thiserror = "2"
+
+[dependencies.futures-core]
+version = "0.3"
+default-features = false
+
+[dependencies.futures-util]
+version = "0.3"
+default-features = false
+optional = true
+
+[dependencies.httpdate]
+version = "1"
+optional = true
+
+[dependencies.reqwest]
+version = "0.13"
+default-features = false
+features = ["json"]
+optional = true
+
+[dependencies.serde]
+version = "1"
+features = ["derive"]
+
+[dependencies.tokio]
+version = "1"
+features = ["time"]
+optional = true
+
+[dependencies.ureq]
+version = "3"
+default-features = false
+features = ["json"]
+optional = true
+
+[dependencies.url]
+version = "2"
+optional = true
+
+[dev-dependencies]
+test-case = "3"
+tracing = "0.1"
+
+[dev-dependencies.clap]
+version = "4"
+features = ["derive"]
+
+[dev-dependencies.tracing-subscriber]
+version = "0.3"
+features = ["env-filter", "json"]
+
+[dev-dependencies.tokio]
+version = "1"
+features = ["io-util", "macros", "net", "rt", "sync", "time"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+
+[profile.distribute]
+inherits = "release"
+strip = "symbols"

@@ -1,0 +1,10 @@
+/target/
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Local agent tooling
+/.agents/
+/.codex/
+/skills-lock.json
