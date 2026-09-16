@@ -59,6 +59,8 @@ all three primitives, and runnable examples.
   response bytes, and typed errors.
 - [Progress events](docs/progress-events.md) — observe retries with a blocking iterator or
   asynchronous stream.
+- [Wire-contract reconciliation](docs/contract-reconciliation.md) — offline fixtures and
+  source comparison across the HTTP API, Python SDK, and JavaScript SDK.
 - [Pull request questions](examples/pr_questions/README.md) — a clap CLI that applies
   `.ts_rules/*.json` to PR metadata and diffs, with a GitHub Actions setup guide.
 - [Semantic search with `tsg`](examples/tsg/README.md) — a Tokio and clap CLI that

@@ -11,8 +11,22 @@ use typesafe_ai::{Answer, Error, NoulCriteria, Question, Request, Response};
 #[test_case(json!(true), false ; "boolean state")]
 #[test_case(json!(42), false ; "numeric state")]
 fn validates_documented_state_shapes(state: Value, valid: bool) {
-    let result = Request::new(state).validate();
+    let result = Request::new(state)
+        .with_question("q", Question::noul("check"))
+        .validate();
     assert_eq!(result.is_ok(), valid);
+}
+
+#[test]
+fn rejects_empty_questions() {
+    let error = Request::new("state")
+        .validate()
+        .expect_err("a System One request needs at least one question");
+    assert!(matches!(
+        error,
+        Error::Validation { ref field, ref message }
+            if field == "questions" && message.contains("at least one question")
+    ));
 }
 
 #[test_case(Value::Null, true ; "null entry")]
@@ -147,4 +161,52 @@ fn decodes_typed_answers_structured_legends_and_optional_usage() {
 fn validation_error_identifies_the_field() {
     let error = Request::new(true).validate().expect_err("invalid state");
     assert!(matches!(error, Error::Validation { ref field, .. } if field == "state"));
+}
+
+#[test]
+fn documented_request_fixture_deserializes_and_validates() {
+    let request: Request =
+        serde_json::from_str(include_str!("fixtures/contract/systemone-request.json"))
+            .expect("documented request fixture deserializes");
+
+    request
+        .validate()
+        .expect("documented request fixture validates");
+    assert_eq!(request.model, "jev-latest");
+    assert_eq!(request.questions.len(), 3);
+}
+
+#[test]
+fn omitted_instructions_fixture_deserializes_as_null() {
+    let request: Request = serde_json::from_str(include_str!(
+        "fixtures/contract/systemone-optional-instructions.json"
+    ))
+    .expect("optional instructions fixture deserializes");
+
+    request
+        .validate()
+        .expect("optional instructions fixture validates");
+    for question in request.questions.values() {
+        let instructions = match question {
+            Question::Noul { instructions, .. }
+            | Question::Choice { instructions, .. }
+            | Question::Score { instructions, .. } => instructions,
+        };
+        assert_eq!(instructions, &Value::Null);
+    }
+}
+
+#[test]
+fn documented_response_fixture_decodes() {
+    let response: Response =
+        serde_json::from_str(include_str!("fixtures/contract/systemone-response.json"))
+            .expect("documented response fixture deserializes");
+
+    assert_eq!(response.model, "jev-latest");
+    assert_eq!(response.answers.len(), 3);
+    assert_eq!(
+        response.answer("is_urgent").and_then(Answer::noul),
+        Some(0.92)
+    );
+    assert_eq!(response.usage.expect("usage").output_tokens, Some(48));
 }
