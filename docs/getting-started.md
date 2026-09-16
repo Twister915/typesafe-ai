@@ -114,3 +114,20 @@ cargo run --no-default-features --features ureq,rustls-tls --example blocking_ev
 Set `TYPESAFE_API_KEY` before running either example. For detailed service semantics, see
 the [TypeSafe API reference](https://docs.typesafe.ai/api) and
 [primitive guide](https://docs.typesafe.ai/primitives).
+
+## A larger async example
+
+[`tsg`](../examples/tsg/README.md) combines the async client with Tokio and clap to
+search local text collections by meaning, including Markdown, prose, and code:
+
+```console
+cargo run --example tsg -- find 'Laws relevant to operating a food truck' laws/
+cargo run --example tsg -- grep 'Does this passage impose a permit requirement?' laws/
+```
+
+`find` ranks passages useful for the supplied topic, task, or question, including
+relevant definitions and exceptions. `grep` independently judges whether each
+passage satisfies the supplied condition, allowing any number of matches.
+Both return original source with file and line locations. The example demonstrates
+bounded concurrent requests, cancellation, and explicit scan coverage; model judgments
+can still miss relevant passages.
