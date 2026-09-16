@@ -8,6 +8,18 @@ permissions:
   contents: read
 
 jobs:
+  fmt:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal --component rustfmt
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
   check:
     runs-on: ubuntu-latest
     steps:
