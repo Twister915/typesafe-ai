@@ -1,54 +1,66 @@
 # Releases
 
 `main` contains the latest release plus unreleased changes. Tags such as `v0.1.0`
-identify frozen releases. Merge normal PRs into `main` whenever they are ready;
-there is no release branch or post-release development-version bump.
+identify frozen releases. Merge normal PRs into `main` whenever they are ready.
 
 Add user-facing changes to `CHANGELOG.md` under `## Unreleased` as bullet points.
-Leave `Cargo.toml` and `Cargo.lock` at the last release version until cutting the
+Leave `Cargo.toml` and `Cargo.lock` at the last release version until preparing the
 next release. For this pre-1.0 crate, use a minor bump for breaking API changes
 (for example, `0.1.0` to `0.2.0`) and a patch bump for compatible changes.
 
+## Repository setup
+
+Keep the `main` ruleset enabled, including required PRs and status checks. No
+bypass actor or token is needed. Enable these two repository settings:
+
+- **Settings → General → Pull Requests → Allow auto-merge**.
+- **Settings → Actions → General → Workflow permissions → Allow GitHub Actions
+  to create and approve pull requests**. GitHub combines these capabilities in
+  one checkbox; these workflows create PRs but never submit approving reviews.
+
+The default workflow permission can remain read-only. Individual jobs request
+only the permissions they need: preparing a release needs contents/PR write and
+Actions write to dispatch CI; finalization needs contents write and PR read.
+GitHub supplies `GITHUB_TOKEN`; no personal token or crates.io secret is required.
+
 ## Cut a release on GitHub
 
-After the release workflow has been merged into `main`:
+1. Open **Actions → Release → Run workflow**.
+2. Select **main** and enter a stable version, such as `0.2.0`, without `v`.
+3. Click **Run workflow**. The run summary links to the release PR.
 
-1. Open **Actions → Release → Run workflow** in GitHub.
-2. Select **main** and enter the exact version, such as `0.2.0`, without `v`.
-3. Click **Run workflow** and wait for it to succeed.
+The workflow prepares `release/vX.Y.Z` with the root package version updated in
+both Cargo files, the release notes dated in UTC, and an empty `Unreleased`
+section. Dependency versions stay unchanged. It pushes only that new branch and
+opens a PR targeting `main`; it never directly updates the protected branch.
+Existing release branches and tags are not overwritten.
 
-Only stable `X.Y.Z` versions greater than the current manifest version are
-supported. The `Unreleased` section must contain notes, and the tag must not exist.
-The workflow checks out the exact `main` commit selected when the run was started.
-It updates only the root package version in both Cargo files, dates the changelog
-section using UTC, leaves an empty `Unreleased` section, and creates a release
-commit. Dependency versions remain unchanged.
+The workflow explicitly dispatches CI on the release branch and waits for the
+entire run to pass. This runs the existing `cargo fmt`, `check`, and feature
+matrix jobs on the PR head, including required status checks. Token-authenticated
+pushes do not trigger ordinary push CI; explicit dispatch also avoids depending
+on the approval-required CI run that GitHub may create for a bot-authored PR.
 
-Before pushing, it runs the same formatting, Clippy, tests, documentation, package,
-and feature checks as CI. CI and releases share `.github/scripts/check.sh`.
-The release runs the five feature selections sequentially; normal CI uses a matrix.
-The Python preparation tests run in both workflows and need Python 3.11 or newer.
+After CI succeeds, the workflow enables squash auto-merge for that exact PR head.
+GitHub still enforces required checks, reviews, and an up-to-date branch. If any
+requirement remains unmet, the PR stays open. If `main` advances, update the PR
+branch and let CI pass again; no workflow bypasses the rules or approves reviews.
 
-The commit and annotated tag are pushed atomically: both are created or neither
-is. An explicit lease requires `main` to still point to the selected commit and
-the tag to remain absent. If another PR merges during validation, the push fails
-without overwriting it. Start a **new** workflow run to select the new `main`;
-rerunning the old run still selects its original commit. Release runs are serialized.
+After merge, **Finalize release** checks out the PR's exact merge commit,
+validates its version/changelog and runs the full crate and feature checks again.
+It then pushes only an annotated tag and creates a GitHub Release. The tag refers
+to that merged commit even if `main` advances. Crates.io publishing remains manual.
+The GitHub Release can exist before the crate is available in the registry.
 
-Finally, the workflow creates a GitHub Release using the changelog notes and puts
-local publishing commands in the run summary. This does **not** publish to crates.io.
-The GitHub Release can exist before the crate becomes available in the registry.
-
-GitHub supplies the workflow's `GITHUB_TOKEN`; no personal token or crates.io
-secret needs to be configured. The workflow requests `contents: write`, and
-repository or organization rules must allow it to push to `main` and create tags.
-It does not bypass branch protection. If protection is enabled later, revisit
-this direct-commit release flow. Token-authenticated pushes do not trigger ordinary
-push CI, so all checks run inside the release workflow before the push.
+The dispatching workflow calls finalization directly because merges performed
+with `GITHUB_TOKEN` may not trigger another workflow. A merged-PR event also
+handles human merges. Finalization is serialized per PR and can safely repeat:
+an existing tag must identify the exact same commit, and an existing GitHub
+Release is preserved.
 
 ## Publish from your machine
 
-Publish from the tag, even if `main` has advanced. For example, from your repository:
+Publish from the tag, even if `main` has advanced. From your repository:
 
 ```sh
 git fetch origin --tags
@@ -58,19 +70,25 @@ cargo publish --locked --dry-run
 cargo publish --locked
 ```
 
-Use your local Cargo credentials. Run the final command only after reviewing the
-dry run. Cargo's package verification builds the packaged crate; it does not rerun
-the full CI suite. The suite already ran on the tagged source before release.
+Use your local Cargo credentials and review the dry run before publishing.
+The finalization run summary includes these commands with the actual version.
 
 ## Recover from failures
 
-- **Before the atomic push:** no remote release commit or tag was created. Fix the
-  issue and start a new run from `main` with the intended version.
-- **After the push, before GitHub Release creation:** the release commit and tag
-  already exist. Do not move or delete the tag. Inspect the tag and create the
-  missing GitHub Release in the UI using that existing tag and its changelog notes.
-  A new workflow run with the same version deliberately fails instead of retagging.
-- **Local publishing fails:** fix local authentication or connectivity and retry
-  from the same tag. If the upload result was ambiguous, check crates.io first.
-  If a source change is needed, merge the fix into `main` and cut a new version;
-  never change an existing release tag.
+- **Branch created, PR creation failed:** enable the Actions PR setting above,
+  then open a PR from the compare link in the run summary. Do not rerun release
+  preparation over the existing branch.
+- **CI fails or auto-merge is blocked:** fix or update the release PR, rerun CI,
+  and enable auto-merge once all checks pass. Normal branch rules still apply.
+- **Finalization times out waiting for merge:** it waits up to ten minutes for
+  remaining requirements. Once merged, run **Actions → Finalize release → Run
+  workflow** on `main`, entering the release PR number. Use the same recovery
+  button after cancellation or a tag/Release API failure; it reads the actual
+  merged SHA and refuses unmerged, foreign, or mismatched release PRs.
+- **A tag already points elsewhere:** investigate and cut a new version rather
+  than moving the tag. No workflow overwrites an existing tag.
+- **Local publishing fails:** resolve local credentials or connectivity and
+  retry from the same tag. If the upload result was ambiguous, check crates.io
+  first. Source fixes need a new PR and release version.
+
+The preparation and finalization tests run in CI and require Python 3.11 or newer.

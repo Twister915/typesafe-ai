@@ -1,0 +1,112 @@
+name: Finalize release
+
+on:
+  workflow_call:
+    inputs:
+      pr:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Merged release PR number (for recovery)"
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finalize-release-${{ inputs.pr || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'release/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_PR: ${{ inputs.pr || github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Wait for merge and verify release PR
+        id: release
+        timeout-minutes: 15
+        run: |
+          if [[ ! "$RELEASE_PR" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Expected a numeric release PR number." >&2
+            exit 1
+          fi
+          for attempt in {1..60}; do
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$RELEASE_PR" > "$RUNNER_TEMP/release-pr.json"
+            state=$(jq -r .state "$RUNNER_TEMP/release-pr.json")
+            if [[ "$state" == closed ]]; then
+              python3 -B .github/scripts/release_metadata.py pr \
+                "$RUNNER_TEMP/release-pr.json" "$GITHUB_REPOSITORY" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Release PR is still open. Resolve its requirements, then run Finalize release after merge." >&2
+          exit 1
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+          fetch-depth: 0
+      - name: Read version and notes from merged commit
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: python3 -B .github/scripts/release_metadata.py notes "$RELEASE_VERSION" > "$RUNNER_TEMP/release-notes.md"
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal --component clippy --component rustfmt
+      - name: Validate merged release
+        run: |
+          python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
+          bash .github/scripts/check.sh check
+          for features in "" rustls-tls reqwest ureq ureq,rustls-tls; do
+            bash .github/scripts/check.sh features "$features"
+          done
+      - name: Tag merged release without updating main
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash .github/scripts/push_release.sh
+      - name: Create GitHub Release if missing
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if ! gh release view "v$RELEASE_VERSION" > /dev/null 2>&1; then
+            gh release create "v$RELEASE_VERSION" --verify-tag \
+              --title "v$RELEASE_VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+      - name: Show local publishing commands
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          {
+            echo "## v$RELEASE_VERSION is tagged; crates.io publishing is still manual"
+            echo
+            echo '```sh'
+            echo 'git fetch origin --tags'
+            echo "git worktree add --detach ../typesafe-ai-release-$RELEASE_VERSION v$RELEASE_VERSION"
+            echo "cd ../typesafe-ai-release-$RELEASE_VERSION"
+            echo 'cargo publish --locked --dry-run'
+            echo 'cargo publish --locked'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

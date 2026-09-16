@@ -1,4 +1,4 @@
-"""Verify publication safeguards against a disposable local bare Git remote."""
+"""Verify tag publication safeguards against a disposable local bare Git remote."""
 
 import os
 from pathlib import Path
@@ -38,27 +38,42 @@ class PushReleaseTests(unittest.TestCase):
         script = Path(__file__).resolve().with_name("push_release.sh")
         return subprocess.run(
             ["bash", str(script)], cwd=self.repo, text=True, capture_output=True,
-            env={**os.environ, "BASE_SHA": self.base, "RELEASE_VERSION": "0.2.0"},
+            env={**os.environ, "RELEASE_VERSION": "0.2.0"},
         )
 
-    def test_pushes_both_refs(self):
+    def test_pushes_only_the_release_tag(self):
         result = self.push()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f"{self.release} refs/heads/main", self.refs())
+        self.assertIn(f"{self.base} refs/heads/main", self.refs())
         target = self.git("--git-dir", str(self.remote), "rev-parse", "refs/tags/v0.2.0^{commit}")
         self.assertEqual(target, self.release)
 
-    def test_main_race_leaves_both_refs_unchanged(self):
+    def test_main_can_advance_without_changing_release_target(self):
         self.git("switch", "--detach", self.base)
         self.git("commit", "--allow-empty", "-m", "Concurrent merge")
         self.git("push", "origin", "HEAD:main")
         self.git("switch", "--detach", self.release)
+        main = self.git("--git-dir", str(self.remote), "rev-parse", "main")
+        result = self.push()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"{main} refs/heads/main", self.refs())
+        target = self.git("--git-dir", str(self.remote), "rev-parse", "v0.2.0^{commit}")
+        self.assertEqual(target, self.release)
+
+    def test_tag_race_leaves_both_refs_unchanged(self):
+        self.git("--git-dir", str(self.remote), "tag", "v0.2.0", self.base)
         before = self.refs()
         self.assertNotEqual(self.push().returncode, 0)
         self.assertEqual(self.refs(), before)
 
-    def test_tag_race_leaves_both_refs_unchanged(self):
-        self.git("--git-dir", str(self.remote), "tag", "v0.2.0", self.base)
+    def test_retry_preserves_the_existing_tag(self):
+        self.assertEqual(self.push().returncode, 0)
+        before = self.refs()
+        self.assertEqual(self.push().returncode, 0)
+        self.assertEqual(self.refs(), before)
+
+    def test_local_tag_on_another_commit_is_rejected(self):
+        self.git("tag", "v0.2.0", self.base)
         before = self.refs()
         self.assertNotEqual(self.push().returncode, 0)
         self.assertEqual(self.refs(), before)

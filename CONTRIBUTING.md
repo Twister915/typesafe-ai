@@ -49,7 +49,8 @@ cargo tree --no-default-features --features ureq,rustls-tls -e normal
 ```
 
 Add release notes under `Unreleased` in `CHANGELOG.md`; leave version bumps to the
-manual GitHub release workflow. `main` stays open for development, while release
+manual GitHub release workflow, which opens a PR and auto-merges after CI passes
+and branch rules are satisfied. `main` stays open for development, while release
 tags preserve each released version. See [the release guide](docs/releases.md) for
 the GitHub button, validation, failure recovery, and local publishing commands.
 Before publishing locally, review the contents with `cargo package --list`.

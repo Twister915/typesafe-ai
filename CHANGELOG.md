@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Add a manual GitHub release workflow with versioning, validation, and tags;
+- Add a manual GitHub release workflow that opens a release PR, auto-merges
+  after CI passes, and tags the merged commit while preserving branch protection;
   crates.io publishing remains a local maintainer step.
 
 ## 0.1.0 — 2026-09-15

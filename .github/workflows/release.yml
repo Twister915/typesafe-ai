@@ -9,18 +9,24 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: release
+  group: release-pr
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
     env:
       RELEASE_VERSION: ${{ inputs.version }}
-      BASE_SHA: ${{ github.sha }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Require main
@@ -35,7 +41,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Prepare version and release notes
+      - name: Prepare release branch
         run: |
           python3 .github/scripts/prepare_release.py "$RELEASE_VERSION" --notes "$RUNNER_TEMP/release-notes.md"
           if git show-ref --verify --quiet "refs/tags/v$RELEASE_VERSION"; then
@@ -46,34 +52,52 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml Cargo.lock CHANGELOG.md
           git commit -m "Release v$RELEASE_VERSION"
-      - name: Install nightly Rust
-        run: rustup toolchain install nightly --profile minimal --component clippy --component rustfmt
-      - name: Check release tooling
-        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
-      - name: Validate release commit and package
-        run: bash .github/scripts/check.sh check
-      - name: Validate feature selections
-        run: |
-          for features in "" rustls-tls reqwest ureq ureq,rustls-tls; do
-            bash .github/scripts/check.sh features "$features"
-          done
-      - name: Push release commit and tag together
-        run: bash .github/scripts/push_release.sh
-      - name: Create GitHub Release
-        run: |
-          gh release create "v$RELEASE_VERSION" --verify-tag \
-            --title "v$RELEASE_VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
-      - name: Show local publishing commands
+          # Create a new branch only; never push to main or overwrite an existing proposal.
+          branch="release/v$RELEASE_VERSION"
+          git push --force-with-lease="refs/heads/$branch:" origin "HEAD:refs/heads/$branch"
+          echo "Release branch: [$branch]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Open release PR
+        id: pr
         run: |
           {
-            echo "## v$RELEASE_VERSION is tagged; crates.io publishing is still manual"
+            cat "$RUNNER_TEMP/release-notes.md"
             echo
-            echo 'Run locally from your repository:'
-            echo '```sh'
-            echo 'git fetch origin --tags'
-            echo "git worktree add --detach ../typesafe-ai-release-$RELEASE_VERSION v$RELEASE_VERSION"
-            echo "cd ../typesafe-ai-release-$RELEASE_VERSION"
-            echo 'cargo publish --locked --dry-run'
-            echo 'cargo publish --locked'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+            echo 'CI must pass before this release PR can auto-merge. After merge, the workflow tags the merged commit and creates a GitHub Release. Publishing to crates.io remains manual.'
+          } > "$RUNNER_TEMP/release-pr.md"
+          url=$(gh pr create --base main --head "release/v$RELEASE_VERSION" \
+            --title "Release v$RELEASE_VERSION" --body-file "$RUNNER_TEMP/release-pr.md")
+          number=$(gh pr view "$url" --json number --jq .number)
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "Release PR: $url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Dispatch CI and wait for all checks
+        timeout-minutes: 30
+        run: |
+          # GITHUB_TOKEN pushes do not trigger push CI. Dispatch runs the same jobs
+          # on the release branch, including the required cargo fmt/check/features checks.
+          branch="release/v$RELEASE_VERSION"
+          sha=$(git rev-parse HEAD)
+          gh workflow run ci.yml --ref "$branch"
+          for attempt in {1..30}; do
+            run_id=$(gh run list --workflow ci.yml --branch "$branch" --event workflow_dispatch \
+              --commit "$sha" --json databaseId --jq '.[0].databaseId // empty' --limit 1)
+            if [[ -n "$run_id" ]]; then
+              gh run watch "$run_id" --exit-status --interval 15
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "CI dispatch was not found. Inspect the release PR and Actions before retrying." >&2
+          exit 1
+      - name: Enable auto-merge after CI passes
+        env:
+          RELEASE_PR: ${{ steps.pr.outputs.number }}
+        run: gh pr merge "$RELEASE_PR" --auto --squash --match-head-commit "$(git rev-parse HEAD)"
+
+  finalize:
+    needs: prepare
+    permissions:
+      contents: write
+      pull-requests: read
+    uses: ./.github/workflows/finalize-release.yml
+    with:
+      pr: ${{ needs.prepare.outputs.pr }}
