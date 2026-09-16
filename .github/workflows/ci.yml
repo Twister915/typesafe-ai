@@ -16,18 +16,10 @@ jobs:
           persist-credentials: false
       - name: Install nightly Rust
         run: rustup toolchain install nightly --profile minimal --component clippy --component rustfmt
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Lint
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-      - name: Test
-        run: cargo test --locked --all-features
-      - name: Build documentation
-        run: cargo doc --locked --no-deps --all-features
-        env:
-          RUSTDOCFLAGS: -D warnings
-      - name: Verify package
-        run: cargo package --locked
+      - name: Check release tooling
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Validate crate and package
+        run: bash .github/scripts/check.sh check
 
   features:
     runs-on: ubuntu-latest
@@ -41,13 +33,6 @@ jobs:
       - name: Install nightly Rust
         run: rustup toolchain install nightly --profile minimal
       - name: Test feature selection
-        run: cargo test --locked --no-default-features --features "${{ matrix.features }}"
-      - name: Verify blocking dependency isolation
-        if: matrix.features == 'ureq,rustls-tls'
-        shell: bash
-        run: |
-          cargo tree --locked --no-default-features --features ureq,rustls-tls -e normal --prefix none > dependencies.txt
-          if grep -E '^(reqwest|tokio) v' dependencies.txt; then
-            echo "Blocking-only builds must not depend on reqwest or Tokio."
-            exit 1
-          fi
+        run: bash .github/scripts/check.sh features "$FEATURES"
+        env:
+          FEATURES: ${{ matrix.features }}

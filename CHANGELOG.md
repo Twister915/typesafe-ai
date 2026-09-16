@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add a manual GitHub release workflow with versioning, validation, and tags;
+  crates.io publishing remains a local maintainer step.
+
 ## 0.1.0 — 2026-09-15
 
 - Portable `pr_questions` CLI example, repository question files, and GitHub Actions setup guide.
