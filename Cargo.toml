@@ -52,6 +52,12 @@ name = "pr_questions"
 required-features = ["ureq"]
 test = true
 
+[[example]]
+name = "tsg"
+path = "examples/tsg/main.rs"
+required-features = ["reqwest"]
+test = true
+
 [features]
 default = ["reqwest", "rustls-tls"]
 reqwest = ["dep:futures-util", "dep:httpdate", "dep:reqwest", "dep:tokio", "dep:url"]
@@ -102,8 +108,11 @@ version = "2"
 optional = true
 
 [dev-dependencies]
+ignore = "0.4"
+sha2 = "0.11"
 test-case = "3"
 tracing = "0.1"
+unicode-segmentation = "1"
 
 [dev-dependencies.clap]
 version = "4"
@@ -115,7 +124,7 @@ features = ["env-filter", "json"]
 
 [dev-dependencies.tokio]
 version = "1"
-features = ["io-util", "macros", "net", "rt", "sync", "time"]
+features = ["fs", "io-util", "macros", "net", "rt", "rt-multi-thread", "signal", "sync", "time"]
 
 [profile.release]
 lto = "fat"

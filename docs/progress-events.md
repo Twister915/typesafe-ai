@@ -4,7 +4,8 @@
 or terminal error. Use `evaluate_events` when an application needs to display progress,
 record individual failures, or observe retry scheduling.
 
-Each `EvaluationEvent::Failed` contains:
+`EvaluationEvent::AttemptFailed` reports an unsuccessful attempt, which may be retried.
+It contains:
 
 - `error`: the validation, transport, timeout, decoding, or API error;
 - `attempt`: zero for local validation, then one-based HTTP attempt numbers;
@@ -30,7 +31,7 @@ async fn observe(client: &ReqwestClient, request: &Request) {
 
     while let Some(event) = poll_fn(|cx| events.as_mut().poll_next(cx)).await {
         match event {
-            EvaluationEvent::Failed(failure) => {
+            EvaluationEvent::AttemptFailed(failure) => {
                 eprintln!("attempt {} failed: {}", failure.attempt, failure.error);
                 if let Some(delay) = failure.retry_delay {
                     eprintln!("retrying in {delay:?}");
@@ -57,7 +58,7 @@ use typesafe_ai::{EvaluationEvent, Request, UreqClient};
 fn observe(client: &UreqClient, request: &Request) {
     for event in client.evaluate_events(request) {
         match event {
-            EvaluationEvent::Failed(failure) => {
+            EvaluationEvent::AttemptFailed(failure) => {
                 eprintln!("attempt {} failed: {}", failure.attempt, failure.error);
             }
             EvaluationEvent::Success(response) => {

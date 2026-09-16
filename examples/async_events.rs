@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     while let Some(event) = poll_fn(|context| events.as_mut().poll_next(context)).await {
         match event {
-            EvaluationEvent::Failed(failure) => {
+            EvaluationEvent::AttemptFailed(failure) => {
                 eprintln!("attempt {} failed: {}", failure.attempt, failure.error);
                 if let Some(delay) = failure.retry_delay {
                     eprintln!("retrying in {delay:?}");

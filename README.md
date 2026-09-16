@@ -61,6 +61,9 @@ all three primitives, and runnable examples.
   asynchronous stream.
 - [Pull request questions](examples/pr_questions/README.md) — a clap CLI that applies
   `.ts_rules/*.json` to PR metadata and diffs, with a GitHub Actions setup guide.
+- [Semantic search with `tsg`](examples/tsg/README.md) — a Tokio and clap CLI that
+  finds text passages relevant to a topic, task, or question, or filters them by a predicate,
+  with bounded concurrent evaluation and original source locations.
 - Rust API documentation — build the current reference locally with
   `cargo doc --open --all-features`.
 - [TypeSafe API reference](https://docs.typesafe.ai/api) and

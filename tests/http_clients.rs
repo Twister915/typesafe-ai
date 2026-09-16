@@ -354,7 +354,7 @@ mod async_client {
         let request = request();
         let mut events = std::pin::pin!(client.evaluate_events(&request));
 
-        let Some(EvaluationEvent::Failed(failure)) =
+        let Some(EvaluationEvent::AttemptFailed(failure)) =
             std::future::poll_fn(|context| events.as_mut().poll_next(context)).await
         else {
             panic!("expected retryable failure");
@@ -384,7 +384,7 @@ mod async_client {
             let mut events = std::pin::pin!(client.evaluate_events(&request));
             assert!(matches!(
                 std::future::poll_fn(|context| events.as_mut().poll_next(context)).await,
-                Some(EvaluationEvent::Failed(_))
+                Some(EvaluationEvent::AttemptFailed(_))
             ));
             let mut context = Context::from_waker(Waker::noop());
             assert!(matches!(
@@ -432,7 +432,7 @@ mod async_client {
         let mut events = std::pin::pin!(client.evaluate_events(&request));
 
         for (attempt, retrying) in [(1, true), (2, true), (3, false)] {
-            let Some(EvaluationEvent::Failed(failure)) =
+            let Some(EvaluationEvent::AttemptFailed(failure)) =
                 std::future::poll_fn(|context| events.as_mut().poll_next(context)).await
             else {
                 panic!("expected failure event");
@@ -691,7 +691,7 @@ mod blocking_client {
         let request = request();
         let mut events = client.evaluate_events(&request);
 
-        let Some(EvaluationEvent::Failed(failure)) = events.next() else {
+        let Some(EvaluationEvent::AttemptFailed(failure)) = events.next() else {
             panic!("expected retryable failure");
         };
         assert_eq!(failure.attempt, 1);
@@ -715,7 +715,7 @@ mod blocking_client {
         let mut events = client.evaluate_events(&request);
 
         for (attempt, retrying) in [(1, true), (2, true), (3, false)] {
-            let Some(EvaluationEvent::Failed(failure)) = events.next() else {
+            let Some(EvaluationEvent::AttemptFailed(failure)) = events.next() else {
                 panic!("expected failure event");
             };
             assert_eq!(failure.attempt, attempt);
