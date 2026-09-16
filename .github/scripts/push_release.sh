@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${BASE_SHA:?expected the commit selected at dispatch}"
 : "${RELEASE_VERSION:?expected the validated release version}"
+[[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
 test -z "$(git status --porcelain)"
-# Only publish the single release commit created on top of the selected main.
-test "$(git rev-parse HEAD^)" = "$BASE_SHA"
-git tag -a "v$RELEASE_VERSION" -m "Release v$RELEASE_VERSION"
-# The lease requires main to still match the commit selected at dispatch.
-# The empty tag lease requires a new tag. Atomic push updates both or neither.
-git push --atomic \
-  --force-with-lease="refs/heads/main:$BASE_SHA" \
-  --force-with-lease="refs/tags/v$RELEASE_VERSION:" \
-  origin HEAD:refs/heads/main "refs/tags/v$RELEASE_VERSION:refs/tags/v$RELEASE_VERSION"
+# Retry only when the existing tag points to this exact merged commit.
+if git show-ref --verify --quiet "refs/tags/v$RELEASE_VERSION"; then
+  test "$(git rev-parse "refs/tags/v$RELEASE_VERSION^{commit}")" = "$(git rev-parse HEAD)"
+else
+  git tag -a "v$RELEASE_VERSION" -m "Release v$RELEASE_VERSION"
+fi
+# Never push main, move an existing tag, or depend on main staying at the release.
+git push origin "refs/tags/v$RELEASE_VERSION:refs/tags/v$RELEASE_VERSION"
