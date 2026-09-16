@@ -22,7 +22,8 @@ answers with your own rules. A request can:
 - **Visible retries when you need them.** Use `evaluate` for a simple result, or observe
   each failure and planned retry through a lazy iterator or stream.
 - **Errors you can inspect.** Status, headers, request IDs, original response bytes, and
-  concrete backend errors remain available without exposing credentials in display text.
+  best-effort structured API details remain available without exposing credentials in display
+  text. Unrecognized details return `None`; use `Error::body()` for the raw body.
 
 ## A small example
 

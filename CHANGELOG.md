@@ -4,6 +4,8 @@
 
 - Validate that System One requests contain at least one question, accept omitted question
   instructions when decoding, and add offline contract fixtures.
+- Add best-effort structured API error details while retaining the original response body
+  through `Error::body()` for unrecognized or malformed responses.
 - Add a manual GitHub release workflow that opens a release PR, auto-merges
   after CI passes, and tags the merged commit while preserving branch protection;
   crates.io publishing remains a local maintainer step.

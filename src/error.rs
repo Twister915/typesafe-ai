@@ -2,7 +2,109 @@ use std::convert::Infallible;
 use std::time::Duration;
 
 use http::{HeaderMap, StatusCode};
+use serde::Deserialize;
+use serde_json::{Map, Value};
 use thiserror::Error;
+
+/// Best-effort structured details extracted from a TypeSafe API error body.
+///
+/// This is intentionally a small view over the currently recognized response shapes rather
+/// than a lossless representation of every possible API error. When parsing is not graceful,
+/// [`Error::api_error_details`](crate::Error::api_error_details) returns `None`; callers can
+/// always inspect the original bytes with [`Error::body`](crate::Error::body).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ApiErrorDetails {
+    /// A human-readable message, when one was present in the response body.
+    pub message: Option<String>,
+    /// Validation issues from a FastAPI-style `detail` array.
+    pub validation: Vec<ApiValidationError>,
+}
+
+/// One validation issue from a FastAPI-style TypeSafe API error response.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ApiValidationError {
+    /// Location of the invalid value. Segments can be field names or array indexes.
+    #[serde(rename = "loc")]
+    pub location: Vec<Value>,
+    /// Human-readable validation message.
+    #[serde(rename = "msg")]
+    pub message: String,
+    /// Machine-readable validation category.
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+fn parse_api_error_details(body: &[u8]) -> Option<ApiErrorDetails> {
+    let value = serde_json::from_slice::<Value>(body).ok()?;
+    parse_api_error_value(&value)
+}
+
+fn parse_api_error_value(value: &Value) -> Option<ApiErrorDetails> {
+    match value {
+        Value::String(message) => Some(ApiErrorDetails {
+            message: Some(message.clone()),
+            validation: Vec::new(),
+        }),
+        Value::Object(object) => parse_api_error_object(object),
+        Value::Array(_) | Value::Null | Value::Bool(_) | Value::Number(_) => None,
+    }
+}
+
+fn parse_api_error_object(object: &Map<String, Value>) -> Option<ApiErrorDetails> {
+    let mut message = object
+        .get("message")
+        .and_then(string_value)
+        .map(str::to_owned);
+
+    if message.is_none() {
+        message = object
+            .get("error")
+            .and_then(message_value)
+            .map(str::to_owned);
+    }
+
+    let mut validation = Vec::new();
+    if let Some(detail) = object.get("detail") {
+        match detail {
+            Value::Array(entries) => {
+                validation = entries
+                    .iter()
+                    .map(|entry| serde_json::from_value::<ApiValidationError>(entry.clone()).ok())
+                    .collect::<Option<Vec<_>>>()?;
+            }
+            value => {
+                if message.is_none() {
+                    message = message_value(value).map(str::to_owned);
+                }
+            }
+        }
+    }
+
+    if message.is_none() && validation.is_empty() {
+        None
+    } else {
+        Some(ApiErrorDetails {
+            message,
+            validation,
+        })
+    }
+}
+
+fn message_value(value: &Value) -> Option<&str> {
+    string_value(value).or_else(|| {
+        value.as_object().and_then(|object| {
+            object
+                .get("message")
+                .or_else(|| object.get("msg"))
+                .or_else(|| object.get("detail"))
+                .and_then(message_value)
+        })
+    })
+}
+
+fn string_value(value: &Value) -> Option<&str> {
+    value.as_str()
+}
 
 /// Errors returned while configuring or using a client.
 #[derive(Debug, Error)]
@@ -88,6 +190,18 @@ impl<E> Error<E> {
         }
     }
 
+    /// Returns best-effort structured details from a non-success API response.
+    ///
+    /// This returns `None` for local errors, successful-response decoding failures, empty or
+    /// malformed bodies, and response shapes that this version does not recognize. The
+    /// original response bytes remain available through [`Self::body`] for custom parsing.
+    pub fn api_error_details(&self) -> Option<ApiErrorDetails> {
+        let Self::Api { body, .. } = self else {
+            return None;
+        };
+        parse_api_error_details(body)
+    }
+
     /// Returns response headers for API and decode failures.
     pub fn headers(&self) -> Option<&HeaderMap> {
         match self {
@@ -139,6 +253,71 @@ impl Error<Infallible> {
                 attempts,
             },
             Self::IncompleteEvaluation => Error::IncompleteEvaluation,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_validation_details() {
+        let details = parse_api_error_details(
+            br#"{
+                "detail": [
+                    {
+                        "loc": ["body", "questions", "urgent", "criteria", 1],
+                        "msg": "Input should be a valid string",
+                        "type": "string_type"
+                    }
+                ]
+            }"#,
+        )
+        .expect("validation details");
+
+        assert_eq!(details.message, None);
+        assert_eq!(details.validation.len(), 1);
+        assert_eq!(details.validation[0].location[4], Value::from(1));
+        assert_eq!(
+            details.validation[0].message,
+            "Input should be a valid string"
+        );
+        assert_eq!(details.validation[0].kind, "string_type");
+    }
+
+    #[test]
+    fn parses_common_message_shapes() {
+        for body in [
+            br#"{"message":"top-level message"}"#.as_slice(),
+            br#"{"error":"error message"}"#.as_slice(),
+            br#"{"error":{"message":"nested message"}}"#.as_slice(),
+            br#"{"detail":"detail message"}"#.as_slice(),
+            br#"{"detail":{"msg":"nested detail"}}"#.as_slice(),
+            br#""nested string body""#.as_slice(),
+        ] {
+            assert!(
+                parse_api_error_details(body).is_some(),
+                "expected message body to parse"
+            );
+        }
+    }
+
+    #[test]
+    fn returns_none_for_unknown_or_malformed_shapes() {
+        for body in [
+            b"".as_slice(),
+            b"not json".as_slice(),
+            br#"{"detail":[]}"#.as_slice(),
+            br#"{"detail":[{"msg":"missing location and type"}]}"#.as_slice(),
+            br#"{"unexpected":{"value":true}}"#.as_slice(),
+            br#"null"#.as_slice(),
+        ] {
+            assert_eq!(
+                parse_api_error_details(body),
+                None,
+                "expected body not to parse"
+            );
         }
     }
 }
