@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     for event in client.evaluate_events(&request) {
         match event {
-            EvaluationEvent::Failed(failure) => {
+            EvaluationEvent::AttemptFailed(failure) => {
                 eprintln!("attempt {} failed: {}", failure.attempt, failure.error);
                 if let Some(delay) = failure.retry_delay {
                     eprintln!("retrying in {delay:?}");

@@ -8,8 +8,10 @@ use crate::{Error, Response};
 /// failure. Consuming the iterator or stream drives the work; no background task runs.
 #[derive(Debug)]
 pub enum EvaluationEvent<E = Infallible> {
-    /// An unsuccessful attempt, with information about the next retry.
-    Failed(EvaluationFailure<E>),
+    /// An unsuccessful attempt, which may be retried.
+    ///
+    /// A `Some` retry delay schedules another attempt; `None` ends the evaluation.
+    AttemptFailed(EvaluationFailure<E>),
     /// The completed evaluation. This is always the final event.
     Success(Response),
 }
@@ -18,15 +20,17 @@ impl<E> EvaluationEvent<E> {
     /// Returns whether this event completes the evaluation.
     pub fn is_terminal(&self) -> bool {
         match self {
-            Self::Failed(failure) => failure.retry_delay.is_none(),
+            Self::AttemptFailed(failure) => failure.retry_delay.is_none(),
             Self::Success(_) => true,
         }
     }
 
     pub(crate) fn into_result(self) -> Option<Result<Response, Error<E>>> {
         match self {
-            Self::Failed(failure) if failure.retry_delay.is_none() => Some(Err(failure.error)),
-            Self::Failed(_) => None,
+            Self::AttemptFailed(failure) if failure.retry_delay.is_none() => {
+                Some(Err(failure.error))
+            }
+            Self::AttemptFailed(_) => None,
             Self::Success(response) => Some(Ok(response)),
         }
     }

@@ -129,7 +129,7 @@ impl ReqwestClient {
                 state.validated = true;
                 if let Err(error) = state.request.validate() {
                     state.done = true;
-                    let event = EvaluationEvent::Failed(EvaluationFailure {
+                    let event = EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error: error.with_transport::<reqwest::Error>(),
                         attempt: 0,
                         retry_delay: None,
@@ -146,7 +146,7 @@ impl ReqwestClient {
                 Ok(raw) => raw,
                 Err(error) => {
                     state.done = true;
-                    let event = EvaluationEvent::Failed(EvaluationFailure {
+                    let event = EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error,
                         attempt,
                         retry_delay: None,
@@ -158,7 +158,7 @@ impl ReqwestClient {
                 state.done = true;
                 let event = match raw.into_response::<reqwest::Error>() {
                     Ok(response) => EvaluationEvent::Success(response),
-                    Err(error) => EvaluationEvent::Failed(EvaluationFailure {
+                    Err(error) => EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error,
                         attempt,
                         retry_delay: None,
@@ -178,7 +178,7 @@ impl ReqwestClient {
             } else {
                 state.done = true;
             }
-            let event = EvaluationEvent::Failed(EvaluationFailure {
+            let event = EvaluationEvent::AttemptFailed(EvaluationFailure {
                 error: raw.into_api_error::<reqwest::Error>(attempt),
                 attempt,
                 retry_delay: delay,

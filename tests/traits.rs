@@ -22,7 +22,7 @@ enum Outcome {
 struct FixtureClient(Outcome);
 
 fn fixture_events(request: &Request, outcome: Outcome) -> Vec<EvaluationEvent<io::Error>> {
-    let mut events = vec![EvaluationEvent::Failed(EvaluationFailure {
+    let mut events = vec![EvaluationEvent::AttemptFailed(EvaluationFailure {
         error: Error::Transport(io::Error::other("temporary failure")),
         attempt: 1,
         retry_delay: Some(Duration::ZERO),
@@ -35,7 +35,7 @@ fn fixture_events(request: &Request, outcome: Outcome) -> Vec<EvaluationEvent<io
             }))
             .expect("valid response fixture"),
         )),
-        Outcome::Failure => events.push(EvaluationEvent::Failed(EvaluationFailure {
+        Outcome::Failure => events.push(EvaluationEvent::AttemptFailed(EvaluationFailure {
             error: Error::Transport(io::Error::other("terminal failure")),
             attempt: 2,
             retry_delay: None,

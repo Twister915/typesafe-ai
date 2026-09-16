@@ -115,7 +115,7 @@ impl UreqClient {
                 validated = true;
                 if let Err(error) = request.validate() {
                     done = true;
-                    return Some(EvaluationEvent::Failed(EvaluationFailure {
+                    return Some(EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error: error.with_transport::<ureq::Error>(),
                         attempt: 0,
                         retry_delay: None,
@@ -131,7 +131,7 @@ impl UreqClient {
                 Ok(raw) => raw,
                 Err(error) => {
                     done = true;
-                    return Some(EvaluationEvent::Failed(EvaluationFailure {
+                    return Some(EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error,
                         attempt,
                         retry_delay: None,
@@ -142,7 +142,7 @@ impl UreqClient {
                 done = true;
                 return Some(match raw.into_response::<ureq::Error>() {
                     Ok(response) => EvaluationEvent::Success(response),
-                    Err(error) => EvaluationEvent::Failed(EvaluationFailure {
+                    Err(error) => EvaluationEvent::AttemptFailed(EvaluationFailure {
                         error,
                         attempt,
                         retry_delay: None,
@@ -160,7 +160,7 @@ impl UreqClient {
             } else {
                 done = true;
             }
-            Some(EvaluationEvent::Failed(EvaluationFailure {
+            Some(EvaluationEvent::AttemptFailed(EvaluationFailure {
                 error: raw.into_api_error::<ureq::Error>(attempt),
                 attempt,
                 retry_delay: delay,
