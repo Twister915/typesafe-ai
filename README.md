@@ -48,8 +48,8 @@ async fn refund_probability(
 The model supplies a bounded judgment; your code keeps control of thresholds, routing,
 side effects, and the larger workflow.
 
-This crate is not published to crates.io yet. See [Getting started](docs/getting-started.md)
-for installation, feature selection, all three primitives, and runnable examples.
+See [Getting started](docs/getting-started.md) for installation, feature selection,
+all three primitives, and runnable examples.
 
 ## Documentation
 

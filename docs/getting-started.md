@@ -1,11 +1,10 @@
 # Getting started
 
-`typesafe-ai` is not published to crates.io yet. Add the Git repository with the default
-asynchronous reqwest client:
+Add `typesafe-ai` with the default asynchronous reqwest client:
 
 ```toml
-[dependencies.typesafe-ai]
-git = "https://github.com/Twister915/typesafe-ai"
+[dependencies]
+typesafe-ai = "0.1"
 ```
 
 Applications using `#[tokio::main]` also need Tokio with the runtime and macro features.
@@ -13,7 +12,7 @@ For the blocking ureq client without reqwest or Tokio:
 
 ```toml
 [dependencies.typesafe-ai]
-git = "https://github.com/Twister915/typesafe-ai"
+version = "0.1"
 default-features = false
 features = ["ureq", "rustls-tls"]
 ```

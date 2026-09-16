@@ -5,6 +5,7 @@ edition = "2024"
 license = "Apache-2.0"
 description = "Sync and async Rust clients for the TypeSafe System One API"
 repository = "https://github.com/Twister915/typesafe-ai"
+documentation = "https://docs.rs/typesafe-ai"
 keywords = ["ai", "classification", "sdk", "typesafe"]
 categories = ["api-bindings", "web-programming::http-client"]
 include = [

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-09-15
 
 - Portable `pr_questions` CLI example, repository question files, and GitHub Actions setup guide.
 - Async reqwest and blocking ureq clients for TypeSafe's System One evaluation endpoint.
