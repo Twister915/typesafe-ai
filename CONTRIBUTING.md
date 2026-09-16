@@ -48,9 +48,13 @@ tree:
 cargo tree --no-default-features --features ureq,rustls-tls -e normal
 ```
 
-Before a release, update the version and changelog, run the checks above, and review
-the contents with `cargo package --list`. Publishing requires the maintainer's
-explicit authorization and a crates.io account with access to the package name.
+Add release notes under `Unreleased` in `CHANGELOG.md`; leave version bumps to the
+manual GitHub release workflow. `main` stays open for development, while release
+tags preserve each released version. See [the release guide](docs/releases.md) for
+the GitHub button, validation, failure recovery, and local publishing commands.
+Before publishing locally, review the contents with `cargo package --list`.
+Publishing requires the maintainer's explicit authorization and a crates.io
+account with access to the package name.
 
 Unless explicitly stated otherwise, contributions are licensed under the
 [Apache License, Version 2.0](LICENSE).
