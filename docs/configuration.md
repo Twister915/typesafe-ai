@@ -53,6 +53,8 @@ inspect them through `Error::status`, `Error::request_id`, `Error::headers`, and
 For non-success API responses, `Error::api_error_details` provides a best-effort structured
 view of response shapes recognized by this crate. It returns `None` when the body is empty,
 malformed, or not a recognized shape (and for errors that did not receive an API response).
+Malformed entries in a validation array are skipped; `None` is returned when no message or
+valid entries remain.
 The raw response bytes are never discarded: use `Error::body()` to parse an application-specific
 or newer format yourself. A successful response that cannot be decoded as the SDK response is a
 `Decode` error; its body is also available through `Error::body()`, but it is not parsed as API

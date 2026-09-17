@@ -12,6 +12,7 @@ use thiserror::Error;
 /// than a lossless representation of every possible API error. When parsing is not graceful,
 /// [`Error::api_error_details`](crate::Error::api_error_details) returns `None`; callers can
 /// always inspect the original bytes with [`Error::body`](crate::Error::body).
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiErrorDetails {
     /// A human-readable message, when one was present in the response body.
@@ -21,6 +22,7 @@ pub struct ApiErrorDetails {
 }
 
 /// One validation issue from a FastAPI-style TypeSafe API error response.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct ApiValidationError {
     /// Location of the invalid value. Segments can be field names or array indexes.
@@ -36,49 +38,33 @@ pub struct ApiValidationError {
 
 fn parse_api_error_details(body: &[u8]) -> Option<ApiErrorDetails> {
     let value = serde_json::from_slice::<Value>(body).ok()?;
-    parse_api_error_value(&value)
-}
-
-fn parse_api_error_value(value: &Value) -> Option<ApiErrorDetails> {
     match value {
-        Value::String(message) => Some(ApiErrorDetails {
+        Value::String(message) if !message.is_empty() => Some(ApiErrorDetails {
             message: Some(message.clone()),
             validation: Vec::new(),
         }),
-        Value::Object(object) => parse_api_error_object(object),
-        Value::Array(_) | Value::Null | Value::Bool(_) | Value::Number(_) => None,
+        Value::Object(object) => parse_api_error_object(&object),
+        _ => None,
     }
 }
 
 fn parse_api_error_object(object: &Map<String, Value>) -> Option<ApiErrorDetails> {
-    let mut message = object
-        .get("message")
-        .and_then(string_value)
+    let message = ["error", "message", "detail"]
+        .into_iter()
+        .find_map(|key| object.get(key).and_then(message_value))
         .map(str::to_owned);
-
-    if message.is_none() {
-        message = object
-            .get("error")
-            .and_then(message_value)
-            .map(str::to_owned);
-    }
-
-    let mut validation = Vec::new();
-    if let Some(detail) = object.get("detail") {
-        match detail {
-            Value::Array(entries) => {
-                validation = entries
-                    .iter()
-                    .map(|entry| serde_json::from_value::<ApiValidationError>(entry.clone()).ok())
-                    .collect::<Option<Vec<_>>>()?;
-            }
-            value => {
-                if message.is_none() {
-                    message = message_value(value).map(str::to_owned);
-                }
-            }
-        }
-    }
+    let validation = object
+        .get("detail")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    serde_json::from_value::<ApiValidationError>(entry.clone()).ok()
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
 
     if message.is_none() && validation.is_empty() {
         None
@@ -91,19 +77,14 @@ fn parse_api_error_object(object: &Map<String, Value>) -> Option<ApiErrorDetails
 }
 
 fn message_value(value: &Value) -> Option<&str> {
-    string_value(value).or_else(|| {
-        value.as_object().and_then(|object| {
-            object
-                .get("message")
-                .or_else(|| object.get("msg"))
-                .or_else(|| object.get("detail"))
-                .and_then(message_value)
-        })
+    if let Some(message) = value.as_str().filter(|message| !message.is_empty()) {
+        return Some(message);
+    }
+    value.as_object().and_then(|object| {
+        ["message", "msg", "detail"]
+            .into_iter()
+            .find_map(|key| object.get(key).and_then(message_value))
     })
-}
-
-fn string_value(value: &Value) -> Option<&str> {
-    value.as_str()
 }
 
 /// Errors returned while configuring or using a client.
@@ -288,19 +269,50 @@ mod tests {
 
     #[test]
     fn parses_common_message_shapes() {
-        for body in [
-            br#"{"message":"top-level message"}"#.as_slice(),
-            br#"{"error":"error message"}"#.as_slice(),
-            br#"{"error":{"message":"nested message"}}"#.as_slice(),
-            br#"{"detail":"detail message"}"#.as_slice(),
-            br#"{"detail":{"msg":"nested detail"}}"#.as_slice(),
-            br#""nested string body""#.as_slice(),
+        for (body, expected) in [
+            (
+                br#"{"message":"top-level message"}"#.as_slice(),
+                "top-level message",
+            ),
+            (br#"{"error":"error message"}"#.as_slice(), "error message"),
+            (
+                br#"{"error":{"message":"nested message"}}"#.as_slice(),
+                "nested message",
+            ),
+            (
+                br#"{"detail":"detail message"}"#.as_slice(),
+                "detail message",
+            ),
+            (
+                br#"{"detail":{"msg":"nested detail"}}"#.as_slice(),
+                "nested detail",
+            ),
+            (br#""nested string body""#.as_slice(), "nested string body"),
         ] {
-            assert!(
-                parse_api_error_details(body).is_some(),
-                "expected message body to parse"
+            assert_eq!(
+                parse_api_error_details(body).and_then(|details| details.message),
+                Some(expected.to_owned())
             );
         }
+    }
+
+    #[test]
+    fn prefers_specific_error_messages_and_keeps_validations() {
+        let details = parse_api_error_details(
+            br#"{
+                "error": "specific failure",
+                "message": "generic failure",
+                "detail": [
+                    {"loc": ["body", "model"], "msg": "required", "type": "missing"},
+                    {"msg": "future validation shape"}
+                ]
+            }"#,
+        )
+        .expect("usable error details");
+
+        assert_eq!(details.message.as_deref(), Some("specific failure"));
+        assert_eq!(details.validation.len(), 1);
+        assert_eq!(details.validation[0].message, "required");
     }
 
     #[test]
@@ -308,6 +320,7 @@ mod tests {
         for body in [
             b"".as_slice(),
             b"not json".as_slice(),
+            b"\"\"".as_slice(),
             br#"{"detail":[]}"#.as_slice(),
             br#"{"detail":[{"msg":"missing location and type"}]}"#.as_slice(),
             br#"{"unexpected":{"value":true}}"#.as_slice(),

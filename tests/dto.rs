@@ -163,6 +163,7 @@ fn validation_error_identifies_the_field() {
     let error = Request::new(true).validate().expect_err("invalid state");
     assert!(matches!(error, Error::Validation { ref field, .. } if field == "state"));
 }
+
 #[test]
 fn documented_request_fixture_deserializes_and_validates() {
     let request: Request =
