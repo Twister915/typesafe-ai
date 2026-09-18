@@ -222,7 +222,9 @@ fn api_error_details_are_structured() {
         "detail": [{
             "loc": ["body", "questions", "urgent"],
             "msg": "field required",
-            "type": "missing"
+            "type": "missing",
+            "input": {"type": "noul"},
+            "ctx": {"field": "instructions"}
         }]
     }"#
         .to_vec(),
@@ -233,6 +235,11 @@ fn api_error_details_are_structured() {
     let details = ApiErrorDetails::try_from(error).expect("documented validation details");
     assert_eq!(details.validation.len(), 1);
     assert_eq!(details.validation[0].message, "field required");
+    assert_eq!(details.validation[0].input, Some(json!({"type": "noul"})));
+    assert_eq!(
+        details.validation[0].context,
+        Some(json!({"field": "instructions"}))
+    );
 }
 
 #[test]

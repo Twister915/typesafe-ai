@@ -34,6 +34,12 @@ pub struct ApiValidationError {
     /// Machine-readable validation category.
     #[serde(rename = "type")]
     pub kind: String,
+    /// The input value that failed validation, when supplied by the API.
+    #[serde(default)]
+    pub input: Option<Value>,
+    /// Additional context used to explain the validation failure, when supplied by the API.
+    #[serde(default, rename = "ctx")]
+    pub context: Option<Value>,
 }
 
 fn parse_api_error_details(body: &[u8]) -> Option<ApiErrorDetails> {
@@ -251,7 +257,9 @@ mod tests {
                     {
                         "loc": ["body", "questions", "urgent", "criteria", 1],
                         "msg": "Input should be a valid string",
-                        "type": "string_type"
+                        "type": "string_type",
+                        "input": 42,
+                        "ctx": {"expected": "string"}
                     }
                 ]
             }"#,
@@ -266,6 +274,11 @@ mod tests {
             "Input should be a valid string"
         );
         assert_eq!(details.validation[0].kind, "string_type");
+        assert_eq!(details.validation[0].input, Some(Value::from(42)));
+        assert_eq!(
+            details.validation[0].context,
+            Some(serde_json::json!({"expected": "string"}))
+        );
     }
 
     #[test]
@@ -314,6 +327,8 @@ mod tests {
         assert_eq!(details.message.as_deref(), Some("specific failure"));
         assert_eq!(details.validation.len(), 1);
         assert_eq!(details.validation[0].message, "required");
+        assert_eq!(details.validation[0].input, None);
+        assert_eq!(details.validation[0].context, None);
     }
 
     #[test]

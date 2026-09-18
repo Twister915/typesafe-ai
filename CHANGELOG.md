@@ -7,6 +7,7 @@
 - Add a consuming `TryFrom` conversion for best-effort structured API error details while
   retaining the original response error and body through `Error::body()` for unrecognized or
   malformed responses.
+- Expose optional validation `input` and `context` (`ctx`) fields in structured API errors.
 - Add a manual GitHub release workflow that opens a release PR, auto-merges
   after CI passes, and tags the merged commit while preserving branch protection;
   crates.io publishing remains a local maintainer step.

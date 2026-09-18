@@ -56,6 +56,8 @@ error when the body is empty, malformed, or not a recognized shape (and for erro
 receive an API response), so status, headers, request ID, and raw bytes remain available.
 Malformed entries in a validation array are skipped; the original error is returned when no
 message or valid entries remain.
+Recognized validation entries also expose the optional `input` value and `context` (`ctx`) object
+when the API supplies them.
 The raw response bytes are never discarded: use `Error::body()` to parse an application-specific
 or newer format yourself. A successful response that cannot be decoded as the SDK response is a
 `Decode` error; its body is also available through `Error::body()`, but it is not parsed as API
