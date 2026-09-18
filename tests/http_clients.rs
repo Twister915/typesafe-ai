@@ -217,6 +217,27 @@ fn success() -> ResponseSpec {
     .header("x-typesafe-request-id", "req_fixture")
 }
 
+fn models() -> ResponseSpec {
+    ResponseSpec::json(
+        200,
+        json!({
+            "models": [
+                {
+                    "name": "jev-latest",
+                    "description": "The latest stable Jev model",
+                    "release_date": "2026-09-15"
+                },
+                {
+                    "name": "jev-1.13.0",
+                    "description": "A pinned Jev release",
+                    "release_date": "2026-09-15"
+                }
+            ]
+        }),
+    )
+    .header("x-typesafe-request-id", "req_models")
+}
+
 fn config(server: &MockServer, prefix: &str) -> ClientConfig {
     ClientConfig {
         base_url: server.base_url(prefix),
@@ -239,6 +260,21 @@ fn assert_request(recorded: &RecordedRequest, expected_path: &str) {
     let body: Value = serde_json::from_slice(&recorded.body).expect("JSON request");
     assert_eq!(body["model"], "jev-latest");
     assert_eq!(body["questions"]["urgent"]["type"], "noul");
+}
+
+fn assert_get_request(recorded: &RecordedRequest, expected_path: &str) {
+    assert!(
+        recorded
+            .head
+            .starts_with(&format!("GET {expected_path} HTTP/1.1"))
+    );
+    assert!(
+        recorded
+            .head
+            .to_ascii_lowercase()
+            .contains("authorization: bearer secret")
+    );
+    assert!(recorded.body.is_empty());
 }
 
 fn assert_api_error<E>(error: Error<E>, status: u16, body: &[u8], attempts: u64) {
@@ -280,6 +316,51 @@ mod async_client {
         assert_eq!(response.usage.expect("usage").output_tokens, Some(2));
         let requests = server.finish();
         assert_request(&requests[0], "/proxy/v1/systemone");
+    }
+
+    #[tokio::test]
+    async fn lists_models_at_the_prefixed_endpoint() {
+        let fixture = models();
+        let expected_body = fixture.body.clone();
+        let server = MockServer::start(vec![fixture]);
+        let client =
+            ReqwestClient::with_config("secret", config(&server, "/proxy")).expect("build client");
+
+        let response = client.list_models().await.expect("list models");
+        assert_eq!(response.request_id.as_deref(), Some("req_models"));
+        assert_eq!(response.raw_body, expected_body);
+        assert_eq!(response.models[0].name, "jev-latest");
+        assert_eq!(response.models[1].description, "A pinned Jev release");
+        assert_get_request(&server.finish()[0], "/proxy/v1/models");
+    }
+
+    #[tokio::test]
+    async fn retries_model_listing() {
+        let server = MockServer::start(vec![ResponseSpec::raw(429, "limited"), models()]);
+        let client =
+            ReqwestClient::with_config("secret", config(&server, "")).expect("build client");
+
+        let response = client.list_models().await.expect("eventual model list");
+        assert_eq!(response.models.len(), 2);
+        assert_eq!(server.finish().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn returns_model_decode_error_with_raw_body() {
+        let server = MockServer::start(vec![
+            ResponseSpec::raw(200, "not json").header("x-typesafe-request-id", "req_models"),
+        ]);
+        let client =
+            ReqwestClient::with_config("secret", config(&server, "")).expect("build client");
+
+        let error = client
+            .list_models()
+            .await
+            .expect_err("invalid model response");
+        assert!(matches!(error, Error::Decode { .. }));
+        assert_eq!(error.body(), Some(b"not json".as_slice()));
+        assert_eq!(error.request_id(), Some("req_models"));
+        server.finish();
     }
 
     #[tokio::test]
@@ -634,6 +715,46 @@ mod blocking_client {
         assert_eq!(response.raw_body, expected_body);
         let requests = server.finish();
         assert_request(&requests[0], "/proxy/v1/systemone");
+    }
+
+    #[test]
+    fn lists_models_at_the_prefixed_endpoint() {
+        let fixture = models();
+        let expected_body = fixture.body.clone();
+        let server = MockServer::start(vec![fixture]);
+        let client =
+            UreqClient::with_config("secret", config(&server, "/proxy")).expect("build client");
+
+        let response = client.list_models().expect("list models");
+        assert_eq!(response.request_id.as_deref(), Some("req_models"));
+        assert_eq!(response.raw_body, expected_body);
+        assert_eq!(response.models[0].name, "jev-latest");
+        assert_eq!(response.models[1].description, "A pinned Jev release");
+        assert_get_request(&server.finish()[0], "/proxy/v1/models");
+    }
+
+    #[test]
+    fn retries_model_listing() {
+        let server = MockServer::start(vec![ResponseSpec::raw(429, "limited"), models()]);
+        let client = UreqClient::with_config("secret", config(&server, "")).expect("build client");
+
+        let response = client.list_models().expect("eventual model list");
+        assert_eq!(response.models.len(), 2);
+        assert_eq!(server.finish().len(), 2);
+    }
+
+    #[test]
+    fn returns_model_decode_error_with_raw_body() {
+        let server = MockServer::start(vec![
+            ResponseSpec::raw(200, "not json").header("x-typesafe-request-id", "req_models"),
+        ]);
+        let client = UreqClient::with_config("secret", config(&server, "")).expect("build client");
+
+        let error = client.list_models().expect_err("invalid model response");
+        assert!(matches!(error, Error::Decode { .. }));
+        assert_eq!(error.body(), Some(b"not json".as_slice()));
+        assert_eq!(error.request_id(), Some("req_models"));
+        server.finish();
     }
 
     #[test]

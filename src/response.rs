@@ -4,6 +4,35 @@ use http::HeaderMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// A model available to the authenticated account.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ModelMetadata {
+    /// Model identifier or alias accepted by the evaluation endpoint.
+    pub name: String,
+    /// Description of the model.
+    pub description: String,
+    /// Release date as supplied by the API.
+    pub release_date: String,
+}
+
+/// Models available to the authenticated account.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ModelsResponse {
+    /// Available models and aliases.
+    pub models: Vec<ModelMetadata>,
+    /// Value of the `x-typesafe-request-id` response header, when present.
+    #[serde(skip)]
+    pub request_id: Option<String>,
+    /// HTTP response headers.
+    #[serde(skip)]
+    pub headers: HeaderMap,
+    /// Original response body bytes.
+    #[serde(skip)]
+    pub raw_body: Vec<u8>,
+}
+
 /// A successful System One response.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Response {

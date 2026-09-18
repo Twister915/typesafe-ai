@@ -4,13 +4,14 @@ use http::header::{HeaderValue, RETRY_AFTER};
 use http::{HeaderMap, StatusCode};
 use url::Url;
 
-use crate::{ClientConfig, Error, Response};
+use crate::{ClientConfig, Error, ModelsResponse, Response};
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(60);
 const RETRY_AFTER_MS: &str = "retry-after-ms";
 
 #[derive(Clone)]
 pub(crate) struct ValidatedConfig {
     pub(crate) endpoint: Url,
+    pub(crate) models_endpoint: Url,
     pub(crate) authorization: HeaderValue,
     pub(crate) max_retries: u32,
     pub(crate) timeout: Duration,
@@ -32,7 +33,8 @@ impl ValidatedConfig {
         authorization.set_sensitive(true);
 
         Ok(Self {
-            endpoint: endpoint(&config.base_url)?,
+            endpoint: endpoint(&config.base_url, "systemone")?,
+            models_endpoint: endpoint(&config.base_url, "models")?,
             authorization,
             max_retries: config.max_retries,
             timeout: config.timeout,
@@ -53,6 +55,28 @@ impl RawResponse {
     {
         let request_id = request_id(&self.headers);
         match serde_json::from_slice::<Response>(&self.body) {
+            Ok(mut response) => {
+                response.request_id = request_id;
+                response.headers = self.headers;
+                response.raw_body = self.body;
+                Ok(response)
+            }
+            Err(source) => Err(Error::Decode {
+                status: self.status,
+                request_id,
+                headers: Box::new(self.headers),
+                body: self.body,
+                source,
+            }),
+        }
+    }
+
+    pub(crate) fn into_models<E>(self) -> Result<ModelsResponse, Error<E>>
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let request_id = request_id(&self.headers);
+        match serde_json::from_slice::<ModelsResponse>(&self.body) {
             Ok(mut response) => {
                 response.request_id = request_id;
                 response.headers = self.headers;
@@ -93,7 +117,7 @@ pub(crate) fn retry_delay(headers: &HeaderMap, retries: u32) -> Option<Duration>
     (delay <= MAX_RETRY_DELAY).then_some(delay)
 }
 
-fn endpoint(base_url: &str) -> Result<Url, Error> {
+fn endpoint(base_url: &str, resource: &str) -> Result<Url, Error> {
     let mut url = Url::parse(base_url)
         .map_err(|error| Error::Configuration(format!("invalid base URL: {error}")))?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -120,7 +144,7 @@ fn endpoint(base_url: &str) -> Result<Url, Error> {
         .map_err(|()| Error::Configuration("base URL cannot contain path segments".to_owned()))?
         .pop_if_empty()
         .push("v1")
-        .push("systemone");
+        .push(resource);
     Ok(url)
 }
 
