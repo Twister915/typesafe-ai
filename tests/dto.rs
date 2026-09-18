@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use http::{HeaderMap, StatusCode};
 use serde_json::{Value, json};
 use test_case::test_case;
-use typesafe_ai::{Answer, Error, NoulCriteria, Question, Request, Response};
+use typesafe_ai::{Answer, ApiErrorDetails, Error, NoulCriteria, Question, Request, Response};
 
 #[test_case(json!("text"), true ; "string state")]
 #[test_case(json!({"message": "text"}), true ; "object state")]
@@ -230,9 +230,7 @@ fn api_error_details_are_structured() {
         attempts: 1,
     };
 
-    let details = error
-        .into_api_error_details()
-        .expect("documented validation details");
+    let details = ApiErrorDetails::try_from(error).expect("documented validation details");
     assert_eq!(details.validation.len(), 1);
     assert_eq!(details.validation[0].message, "field required");
 }
@@ -249,8 +247,7 @@ fn unrecognized_api_error_details_return_original_error() {
         attempts: 1,
     };
 
-    let error = error
-        .into_api_error_details()
+    let error = ApiErrorDetails::try_from(error)
         .expect_err("unrecognized body should return the original error");
     assert_eq!(error.body(), Some(body.as_slice()));
 
@@ -258,7 +255,7 @@ fn unrecognized_api_error_details_return_original_error() {
         field: "state".to_owned(),
         message: "invalid".to_owned(),
     };
-    assert!(local.into_api_error_details().is_err());
+    assert!(ApiErrorDetails::try_from(local).is_err());
 }
 
 #[test]
@@ -273,8 +270,7 @@ fn decode_error_keeps_raw_body_without_api_error_details() {
         source,
     };
 
-    let error = error
-        .into_api_error_details()
+    let error = ApiErrorDetails::try_from(error)
         .expect_err("decode errors should return the original error");
     assert_eq!(error.body(), Some(body.as_slice()));
 }

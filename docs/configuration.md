@@ -50,7 +50,7 @@ error. API and decoding failures retain the status, request ID, headers, and ori
 inspect them through `Error::status`, `Error::request_id`, `Error::headers`, and
 `Error::body`. Display text omits credentials and API response bodies.
 
-For non-success API responses, `Error::into_api_error_details` consumes the error and returns a
+For non-success API responses, `ApiErrorDetails::try_from(error)` consumes the error and returns a
 best-effort structured view of response shapes recognized by this crate. It returns the original
 error when the body is empty, malformed, or not a recognized shape (and for errors that did not
 receive an API response), so status, headers, request ID, and raw bytes remain available.

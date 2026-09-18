@@ -10,8 +10,8 @@ use thiserror::Error;
 ///
 /// This is intentionally a small view over the currently recognized response shapes rather
 /// than a lossless representation of every possible API error. When parsing is not graceful,
-/// [`Error::into_api_error_details`](crate::Error::into_api_error_details) returns the original
-/// error; callers can always inspect its bytes with [`Error::body`](crate::Error::body).
+/// converting an [`enum@Error`] into these details with `TryFrom` returns the original error; callers
+/// can always inspect its bytes with [`Error::body`](crate::Error::body).
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiErrorDetails {
@@ -146,6 +146,19 @@ pub enum Error<E = Infallible> {
     IncompleteEvaluation,
 }
 
+impl<E> TryFrom<Error<E>> for ApiErrorDetails {
+    type Error = Error<E>;
+
+    fn try_from(error: Error<E>) -> Result<Self, Self::Error> {
+        let details = if let Error::Api { body, .. } = &error {
+            parse_api_error_details(body)
+        } else {
+            None
+        };
+        details.ok_or(error)
+    }
+}
+
 impl<E> Error<E> {
     /// Returns the associated HTTP status, when a response was received.
     pub fn status(&self) -> Option<StatusCode> {
@@ -169,21 +182,6 @@ impl<E> Error<E> {
             Self::Decode { body, .. } | Self::Api { body, .. } => Some(body),
             _ => None,
         }
-    }
-
-    /// Consumes this error and returns best-effort structured details from a non-success API
-    /// response.
-    ///
-    /// The original error is returned for local errors, successful-response decoding failures,
-    /// empty or malformed bodies, and response shapes that this version does not recognize. It
-    /// retains the status, headers, request ID, and raw response bytes for custom parsing.
-    pub fn into_api_error_details(self) -> Result<ApiErrorDetails, Self> {
-        let details = if let Self::Api { body, .. } = &self {
-            parse_api_error_details(body)
-        } else {
-            None
-        };
-        details.ok_or(self)
     }
 
     /// Returns response headers for API and decode failures.
