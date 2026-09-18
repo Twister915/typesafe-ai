@@ -6,7 +6,8 @@ use tokio::time::Instant;
 
 use crate::transport::{RawResponse, ValidatedConfig, is_retryable, retry_delay};
 use crate::{
-    AsyncClient, ClientConfig, Error, EvaluationEvent, EvaluationFailure, Request, Response, Stream,
+    AsyncClient, ClientConfig, Error, EvaluationEvent, EvaluationFailure, ModelsResponse, Request,
+    Response, Stream,
 };
 
 /// Errors returned by [`ReqwestClient`].
@@ -88,6 +89,31 @@ impl ReqwestClient {
     /// retried according to [`ClientConfig::max_retries`].
     pub async fn evaluate(&self, request: &Request) -> Result<Response, ReqwestError> {
         AsyncClient::evaluate(self, request).await
+    }
+
+    /// Lists the models and aliases available to the authenticated account.
+    ///
+    /// HTTP 429 and 529 responses are retried according to [`ClientConfig::max_retries`].
+    pub async fn list_models(&self) -> Result<ModelsResponse, ReqwestError> {
+        let mut retries = 0_u32;
+        loop {
+            let attempt = u64::from(retries) + 1;
+            let raw = self.send_models_attempt().await?;
+            if raw.status.is_success() {
+                return raw.into_models::<reqwest::Error>();
+            }
+
+            let should_retry = is_retryable(raw.status) && retries < self.config.max_retries;
+            let delay = should_retry
+                .then(|| retry_delay(&raw.headers, retries))
+                .flatten();
+            let error = raw.into_api_error::<reqwest::Error>(attempt);
+            let Some(delay) = delay else {
+                return Err(error);
+            };
+            retries += 1;
+            tokio::time::sleep(delay).await;
+        }
     }
 
     /// Creates a lazy stream over attempt failures and the terminal result.
@@ -195,6 +221,36 @@ impl ReqwestClient {
                 .post(self.config.endpoint.clone())
                 .header(AUTHORIZATION, self.config.authorization.clone())
                 .json(request)
+                .send()
+                .await?;
+            let status = response.status();
+            let headers = response.headers().clone();
+            let body = response.bytes().await?.to_vec();
+            Ok::<_, reqwest::Error>(RawResponse {
+                status,
+                headers,
+                body,
+            })
+        };
+
+        match tokio::time::timeout(self.config.timeout, exchange).await {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(error)) if error.is_timeout() => Err(Error::Timeout {
+                timeout: self.config.timeout,
+            }),
+            Ok(Err(error)) => Err(Error::Transport(error)),
+            Err(_) => Err(Error::Timeout {
+                timeout: self.config.timeout,
+            }),
+        }
+    }
+
+    async fn send_models_attempt(&self) -> Result<RawResponse, ReqwestError> {
+        let exchange = async {
+            let response = self
+                .http
+                .get(self.config.models_endpoint.clone())
+                .header(AUTHORIZATION, self.config.authorization.clone())
                 .send()
                 .await?;
             let status = response.status();

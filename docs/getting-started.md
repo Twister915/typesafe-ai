@@ -115,6 +115,26 @@ Set `TYPESAFE_API_KEY` before running either example. For detailed service seman
 the [TypeSafe API reference](https://docs.typesafe.ai/api) and
 [primitive guide](https://docs.typesafe.ai/primitives).
 
+## List available models
+
+Both concrete clients can list the models and aliases available to the authenticated account.
+The response includes the model description, release date, request metadata, and original body:
+
+```rust
+use typesafe_ai::{ReqwestClient, ReqwestError};
+
+async fn list_models(client: &ReqwestClient) -> Result<(), ReqwestError> {
+    let response = client.list_models().await?;
+    for model in response.models {
+        println!("{} ({})", model.name, model.release_date);
+    }
+    Ok(())
+}
+```
+
+Use `UreqClient::list_models` the same way without awaiting. Pin a versioned model ID when
+you need stable behavior; aliases such as `jev-latest` can move to a newer release.
+
 ## A larger async example
 
 [`tsg`](../examples/tsg/README.md) combines the async client with Tokio and clap to

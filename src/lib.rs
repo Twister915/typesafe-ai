@@ -68,7 +68,7 @@ pub use futures_core::Stream;
 pub use request::{NoulCriteria, Question, Request};
 #[cfg(feature = "reqwest")]
 pub use reqwest_client::{ReqwestClient, ReqwestError};
-pub use response::{Answer, Response, Usage};
+pub use response::{Answer, ModelMetadata, ModelsResponse, Response, Usage};
 #[cfg(feature = "ureq")]
 pub use ureq_client::{UreqClient, UreqError};
 

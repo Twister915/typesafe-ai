@@ -19,6 +19,7 @@ answers with your own rules. A request can:
   features and choose the blocking ureq client without pulling in Tokio.
 - **One state, several judgments.** Batch independent questions over shared text or
   structured JSON.
+- **Model discovery.** List account-available aliases and versioned model IDs from Rust.
 - **Visible retries when you need them.** Use `evaluate` for a simple result, or observe
   each failure and planned retry through a lazy iterator or stream.
 - **Errors you can inspect.** Status, headers, request IDs, original response bytes, and

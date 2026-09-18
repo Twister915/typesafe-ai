@@ -7,7 +7,8 @@ use http::header::AUTHORIZATION;
 
 use crate::transport::{RawResponse, ValidatedConfig, is_retryable, retry_delay};
 use crate::{
-    ClientConfig, Error, EvaluationEvent, EvaluationFailure, Request, Response, SyncClient,
+    ClientConfig, Error, EvaluationEvent, EvaluationFailure, ModelsResponse, Request, Response,
+    SyncClient,
 };
 
 /// Errors returned by [`UreqClient`].
@@ -81,6 +82,31 @@ impl UreqClient {
     /// retried according to [`ClientConfig::max_retries`].
     pub fn evaluate(&self, request: &Request) -> Result<Response, UreqError> {
         SyncClient::evaluate(self, request)
+    }
+
+    /// Lists the models and aliases available to the authenticated account.
+    ///
+    /// HTTP 429 and 529 responses are retried according to [`ClientConfig::max_retries`].
+    pub fn list_models(&self) -> Result<ModelsResponse, UreqError> {
+        let mut retries = 0_u32;
+        loop {
+            let attempt = u64::from(retries) + 1;
+            let raw = self.send_models_attempt()?;
+            if raw.status.is_success() {
+                return raw.into_models::<ureq::Error>();
+            }
+
+            let should_retry = is_retryable(raw.status) && retries < self.config.max_retries;
+            let delay = should_retry
+                .then(|| retry_delay(&raw.headers, retries))
+                .flatten();
+            let error = raw.into_api_error::<ureq::Error>(attempt);
+            let Some(delay) = delay else {
+                return Err(error);
+            };
+            retries += 1;
+            thread::sleep(delay);
+        }
     }
 
     /// Creates a lazy iterator over attempt failures and the terminal result.
@@ -179,6 +205,33 @@ impl UreqClient {
             .build()
             .header(AUTHORIZATION, self.config.authorization.clone())
             .send_json(request)
+            .map_err(|error| map_transport_error(error, self.config.timeout))?;
+        let status = response.status();
+        let headers = response.headers().clone();
+        let mut body = Vec::new();
+        response
+            .body_mut()
+            .as_reader()
+            .read_to_end(&mut body)
+            .map_err(|error| map_transport_error(ureq::Error::from(error), self.config.timeout))?;
+        Ok(RawResponse {
+            status,
+            headers,
+            body,
+        })
+    }
+
+    fn send_models_attempt(&self) -> Result<RawResponse, UreqError> {
+        let mut response = self
+            .agent
+            .get(self.config.models_endpoint.as_str())
+            .config()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .timeout_global(Some(self.config.timeout))
+            .build()
+            .header(AUTHORIZATION, self.config.authorization.clone())
+            .call()
             .map_err(|error| map_transport_error(error, self.config.timeout))?;
         let status = response.status();
         let headers = response.headers().clone();
