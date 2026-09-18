@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
+use http::{HeaderMap, StatusCode};
 use serde_json::{Value, json};
 use test_case::test_case;
-use typesafe_ai::{Answer, Error, NoulCriteria, Question, Request, Response};
+use typesafe_ai::{Answer, ApiErrorDetails, Error, NoulCriteria, Question, Request, Response};
 
 #[test_case(json!("text"), true ; "string state")]
 #[test_case(json!({"message": "text"}), true ; "object state")]
@@ -209,4 +210,67 @@ fn documented_response_fixture_decodes() {
         Some(0.92)
     );
     assert_eq!(response.usage.expect("usage").output_tokens, Some(48));
+}
+
+#[test]
+fn api_error_details_are_structured() {
+    let error: Error = Error::Api {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        request_id: Some("req_error".to_owned()),
+        headers: Box::new(HeaderMap::new()),
+        body: br#"{
+        "detail": [{
+            "loc": ["body", "questions", "urgent"],
+            "msg": "field required",
+            "type": "missing"
+        }]
+    }"#
+        .to_vec(),
+        retry_after: None,
+        attempts: 1,
+    };
+
+    let details = ApiErrorDetails::try_from(error).expect("documented validation details");
+    assert_eq!(details.validation.len(), 1);
+    assert_eq!(details.validation[0].message, "field required");
+}
+
+#[test]
+fn unrecognized_api_error_details_return_original_error() {
+    let body = b"not json".to_vec();
+    let error: Error = Error::Api {
+        status: StatusCode::BAD_GATEWAY,
+        request_id: None,
+        headers: Box::new(HeaderMap::new()),
+        body: body.clone(),
+        retry_after: None,
+        attempts: 1,
+    };
+
+    let error = ApiErrorDetails::try_from(error)
+        .expect_err("unrecognized body should return the original error");
+    assert_eq!(error.body(), Some(body.as_slice()));
+
+    let local: Error = Error::Validation {
+        field: "state".to_owned(),
+        message: "invalid".to_owned(),
+    };
+    assert!(ApiErrorDetails::try_from(local).is_err());
+}
+
+#[test]
+fn decode_error_keeps_raw_body_without_api_error_details() {
+    let body = b"not a System One response".to_vec();
+    let source = serde_json::from_slice::<Response>(&body).expect_err("invalid response JSON");
+    let error: Error = Error::Decode {
+        status: StatusCode::OK,
+        request_id: None,
+        headers: Box::new(HeaderMap::new()),
+        body: body.clone(),
+        source,
+    };
+
+    let error = ApiErrorDetails::try_from(error)
+        .expect_err("decode errors should return the original error");
+    assert_eq!(error.body(), Some(body.as_slice()));
 }

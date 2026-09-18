@@ -50,6 +50,19 @@ error. API and decoding failures retain the status, request ID, headers, and ori
 inspect them through `Error::status`, `Error::request_id`, `Error::headers`, and
 `Error::body`. Display text omits credentials and API response bodies.
 
+For non-success API responses, `ApiErrorDetails::try_from(error)` consumes the error and returns a
+best-effort structured view of response shapes recognized by this crate. It returns the original
+error when the body is empty, malformed, or not a recognized shape (and for errors that did not
+receive an API response), so status, headers, request ID, and raw bytes remain available.
+Malformed entries in a validation array are skipped; the original error is returned when no
+message or valid entries remain.
+The raw response bytes are never discarded: use `Error::body()` to parse an application-specific
+or newer format yourself. A successful response that cannot be decoded as the SDK response is a
+`Decode` error; its body is also available through `Error::body()`, but it is not parsed as API
+error details. When retries are enabled, the terminal error contains the final attempt's body;
+inspect `EvaluationFailure::error.body()` while consuming the event API to examine earlier
+attempts.
+
 Numeric answers, probabilities, and confidence values use `f64`, so they may not preserve
 the decimal spelling in JSON. Successful responses retain the original bytes in
 `Response::raw_body`. Applications that need exact decimal handling can parse those bytes

@@ -62,7 +62,7 @@ mod transport;
 mod ureq_client;
 
 pub use config::ClientConfig;
-pub use error::Error;
+pub use error::{ApiErrorDetails, ApiValidationError, Error};
 pub use events::{EvaluationEvent, EvaluationFailure};
 pub use futures_core::Stream;
 pub use request::{NoulCriteria, Question, Request};
