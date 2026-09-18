@@ -213,34 +213,32 @@ fn documented_response_fixture_decodes() {
 }
 
 #[test]
-fn api_error_details_are_structured_without_consuming_the_raw_body() {
-    let body = br#"{
+fn api_error_details_are_structured() {
+    let error: Error = Error::Api {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        request_id: Some("req_error".to_owned()),
+        headers: Box::new(HeaderMap::new()),
+        body: br#"{
         "detail": [{
             "loc": ["body", "questions", "urgent"],
             "msg": "field required",
             "type": "missing"
         }]
     }"#
-    .to_vec();
-    let error: Error = Error::Api {
-        status: StatusCode::UNPROCESSABLE_ENTITY,
-        request_id: Some("req_error".to_owned()),
-        headers: Box::new(HeaderMap::new()),
-        body: body.clone(),
+        .to_vec(),
         retry_after: None,
         attempts: 1,
     };
 
     let details = error
-        .api_error_details()
+        .into_api_error_details()
         .expect("documented validation details");
     assert_eq!(details.validation.len(), 1);
     assert_eq!(details.validation[0].message, "field required");
-    assert_eq!(error.body(), Some(body.as_slice()));
 }
 
 #[test]
-fn api_error_details_return_none_for_unrecognized_bodies() {
+fn unrecognized_api_error_details_return_original_error() {
     let body = b"not json".to_vec();
     let error: Error = Error::Api {
         status: StatusCode::BAD_GATEWAY,
@@ -251,14 +249,16 @@ fn api_error_details_return_none_for_unrecognized_bodies() {
         attempts: 1,
     };
 
-    assert_eq!(error.api_error_details(), None);
+    let error = error
+        .into_api_error_details()
+        .expect_err("unrecognized body should return the original error");
     assert_eq!(error.body(), Some(body.as_slice()));
 
     let local: Error = Error::Validation {
         field: "state".to_owned(),
         message: "invalid".to_owned(),
     };
-    assert_eq!(local.api_error_details(), None);
+    assert!(local.into_api_error_details().is_err());
 }
 
 #[test]
@@ -273,6 +273,8 @@ fn decode_error_keeps_raw_body_without_api_error_details() {
         source,
     };
 
-    assert_eq!(error.api_error_details(), None);
+    let error = error
+        .into_api_error_details()
+        .expect_err("decode errors should return the original error");
     assert_eq!(error.body(), Some(body.as_slice()));
 }

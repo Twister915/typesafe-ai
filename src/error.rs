@@ -10,8 +10,8 @@ use thiserror::Error;
 ///
 /// This is intentionally a small view over the currently recognized response shapes rather
 /// than a lossless representation of every possible API error. When parsing is not graceful,
-/// [`Error::api_error_details`](crate::Error::api_error_details) returns `None`; callers can
-/// always inspect the original bytes with [`Error::body`](crate::Error::body).
+/// [`Error::into_api_error_details`](crate::Error::into_api_error_details) returns the original
+/// error; callers can always inspect its bytes with [`Error::body`](crate::Error::body).
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ApiErrorDetails {
@@ -171,16 +171,19 @@ impl<E> Error<E> {
         }
     }
 
-    /// Returns best-effort structured details from a non-success API response.
+    /// Consumes this error and returns best-effort structured details from a non-success API
+    /// response.
     ///
-    /// This returns `None` for local errors, successful-response decoding failures, empty or
-    /// malformed bodies, and response shapes that this version does not recognize. The
-    /// original response bytes remain available through [`Self::body`] for custom parsing.
-    pub fn api_error_details(&self) -> Option<ApiErrorDetails> {
-        let Self::Api { body, .. } = self else {
-            return None;
+    /// The original error is returned for local errors, successful-response decoding failures,
+    /// empty or malformed bodies, and response shapes that this version does not recognize. It
+    /// retains the status, headers, request ID, and raw response bytes for custom parsing.
+    pub fn into_api_error_details(self) -> Result<ApiErrorDetails, Self> {
+        let details = if let Self::Api { body, .. } = &self {
+            parse_api_error_details(body)
+        } else {
+            None
         };
-        parse_api_error_details(body)
+        details.ok_or(self)
     }
 
     /// Returns response headers for API and decode failures.
